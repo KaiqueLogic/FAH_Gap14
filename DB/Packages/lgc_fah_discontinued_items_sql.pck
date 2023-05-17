@@ -228,7 +228,7 @@ CREATE OR REPLACE PACKAGE BODY lgc_fah_discontinued_items_sql IS
                                   FROM TABLE(CAST(l_tab_ids AS OBJ_NUMERIC_ID_TABLE)) ids)
 --begin 005 - fabi aki remover
 --and im.item = '100249807'--'100246817'
-and im.dept IN (255,
+/*and im.dept IN (255,
 469,
 26,
 149,
@@ -248,7 +248,7 @@ and im.dept IN (255,
 464,
 257,
 418,
-283)
+283)*/
 --end 005 - fabi aki remover
                                   ),
          it_dep_uda AS (
@@ -290,6 +290,7 @@ and im.dept IN (255,
                    ril.incr_pct,
                    ril.activate_date,
                    ril.deactivate_date,
+                   ril.repl_method,
                    ril.min_stock,
                    ril.max_stock,
                    ril.stock_cat,
@@ -299,7 +300,6 @@ and im.dept IN (255,
                    idu.dept,
                    idu.class,
                    idu.subclass
-                      
               FROM item_loc il,
                    repl_item_loc ril,
                    it_dep_uda idu,
@@ -349,236 +349,210 @@ and im.dept IN (255,
                                    AND (aux.deactivate_date IS NULL OR aux.deactivate_date > p.vdate)
                                    AND aux.repl_method IN ('M', 'C') 
                                    AND DECODE(aux.repl_method, 'M', aux.min_stock, 'C', aux.max_stock) > 1) 
-
-              --Regla 5 - Si el artículo es un paquete, se cambia el paquete y su componente.
-              /*
-              delete from fah_discontinued_items_gtt
-               where (item, loc) IN (select gtt.item, gtt.loc
-                                       from fah_discontinued_items_gtt gtt, packitem pi
-                                      where gtt.item = pi.pack_no
-                                        and not exists (select 1
-                                               from fah_discontinued_items_gtt b
-                                              where b.item = pi.item
-                                                and b.loc = gtt.loc)
-                                        and exists (select 1
-                                               from item_loc il1
-                                              where il1.item = pi.item
-                                                and il1.loc = gtt.loc
-                                                and il1.status = 'A'))
-
-              -------
-              delete from fah_discontinued_items_gtt
-               where (item, loc) IN (select gtt.item, gtt.loc
-                                       from fah_discontinued_items_gtt gtt, packitem pi
-                                      where gtt.item = pi.item
-                                        and not exists (select 1
-                                               from fah_discontinued_items_gtt b
-                                              where b.item = pi.pack_no
-                                                and b.loc = gtt.loc)
-                                        and exists (select 1
-                                               from item_loc il1
-                                              where il1.item = pi.pack_no
-                                                and il1.loc = gtt.loc
-                                                and il1.status = 'A'))*/                                   
                ),
-            
                --Regla 11 - No haya movimientos de stock (órdenes de compra abiertas,transferencias en tránsito) superior al número de ‘Días sin movimiento’
-               open_order_its AS
+               exclude_ord AS
                (select distinct ol.item
                   from ordhead oh, ordloc ol, period p
                  where oh.order_no = ol.order_no
                    and oh.status in ('S', 'A')
-                   and oh.written_date > --to_date('28/04/2023', 'DD/MM/YYYY') - 90)
-                                         p.vdate - 90),--items_loc.no_movement_period ,
-              items_loc_ord_OPEN AS
+                   and oh.written_date > p.vdate - 120),--Fijo, no hay ubicacion para buscar el no_movement_period
+                   
+               items_loc_exc_ord AS
                (select ilo.*
                   from items_loc ilo
-                 where item not in (select item from open_order_its)),
+                 where item not in (select item from exclude_ord)),
 
-              tdh_tsf_in as
+               exc_ord_tdh_30 as
                (select ilo.*
-                  from items_loc_ord_OPEN ilo
-                 where not exists
-                 (select 1
-                          from tran_data_history tdh
-                         where tran_code = 30--Transferencias entrantes
-                           and tdh.location = ilo.location
-                           and tdh.item = ilo.item
-                           and tdh.tran_date > ilo.vdate - ilo.no_movement_period)),
-              td_tsf_in as
-               (select thti.*
-                  from tdh_tsf_in thti
+                  from items_loc_exc_ord ilo
                  where not exists (select 1
-                          from tran_data td
-                         where tran_code = 30--Transferencias entrantes
-                           and td.location = thti.location
-                           and td.dept = thti.dept
-                           and td.class = thti.class
-                           and td.subclass = thti.subclass
-                           and td.item = thti.item)),
-
-              tdh_tsf_out as
+                                    from tran_data_history tdh
+                                   where tran_code = 30--Transferencias entrantes
+                                     and tdh.location = ilo.location
+                                     and tdh.item = ilo.item
+                                     and tdh.tran_date > ilo.vdate - ilo.no_movement_period)),
+               exc_ord_tdh_30_32 as
                (select tti.*
-                  from td_tsf_in tti
-                 where not exists
-                 (select 1
-                          from tran_data_history tdh
-                         where tran_code = 32--Transferencias salientes
-                           and tdh.location = tti.location
-                           and tdh.item = tti.item
-                           and tdh.tran_date > tti.vdate - tti.no_movement_period)),
-              td_tsf_out as
-               (select thto.*
-                  from tdh_tsf_out thto
+                  from exc_ord_tdh_30 tti
                  where not exists (select 1
-                          from tran_data td
-                         where tran_code = 32--Transferencias salientes
-                           and td.location = thto.location
-                           and td.item = thto.item
-                           and td.dept = thto.dept
-                           and td.class = thto.class
-                           and td.subclass = thto.subclass
-                        )),
-              tdh_ord as
+                                    from tran_data_history tdh
+                                   where tran_code = 32--Transferencias salientes
+                                     and tdh.location = tti.location
+                                     and tdh.item = tti.item
+                                     and tdh.tran_date > tti.vdate - tti.no_movement_period)),
+                        
+               exc_ord_tdh_30_32_20 as
                (select tto.*
-                  from td_tsf_out tto
+                  from exc_ord_tdh_30_32 tto
                  where not exists (select 1
                           from tran_data_history tdh
                          where tran_code = 20--Compras
+                           and tdh.location = tto.location--aki
                            and tdh.item = tto.item
                            and tdh.tran_date > tto.vdate - tto.no_movement_period)),
-              td_ord as
-               (select tho.*
-                  from tdh_ord tho
-                 where not exists (select 1
-                          from tran_data td
-                         where tran_code = 20--Compras
-                           and td.item = tho.item
-                           and td.dept = tho.dept
-                           and td.class = tho.class
-                           and td.subclass = tho.subclass
-                        )),
-              tdh_sales as
+                      
+               exc_ord_tdh_30_32_20_1 as
                (select tord.*
-                  from td_ord tord
+                  from exc_ord_tdh_30_32_20 tord
                  where not exists(select 1
                           from tran_data_history tdh
-                         where tran_code in (1, 2, 3)-- Ventas
-                           and tdh.item = tord.item
+                         where tran_code = 1-- Ventas
                            and tdh.location = tord.location
+                           and tdh.item = tord.item
                            and tdh.tran_date > tord.vdate - tord.no_movement_period)),
-              td_sales as
-               (select ths.*
-                  from tdh_sales ths
+
+
+               exc_ord_tdh_30_32_20_1_2 as
+               (select tord.*
+                  from exc_ord_tdh_30_32_20_1 tord
+                 where not exists(select 1
+                          from tran_data_history tdh
+                         where tran_code = 2-- Ventas
+                           and tdh.location = tord.location
+                           and tdh.item = tord.item
+                           and tdh.tran_date > tord.vdate - tord.no_movement_period)),
+
+
+
+               exc_ord_tdh_30_32_20_1_2_3 as
+               (select tord.*
+                  from exc_ord_tdh_30_32_20_1_2 tord
+                 where not exists(select 1
+                          from tran_data_history tdh
+                         where tran_code = 3 -- Ventas
+                           and tdh.location = tord.location
+                           and tdh.item = tord.item
+                           and tdh.tran_date > tord.vdate - tord.no_movement_period)),
+
+               exc_ord_tdh_td as
+               (select thti.*
+                  from exc_ord_tdh_30_32_20_1_2_3 thti
                  where not exists (select 1
-                          from tran_data td
-                         where tran_code in (1, 2, 3)-- Ventas
-                           and td.item = ths.item
-                           and td.location = ths.location
-                           and td.dept = ths.dept
-                           and td.class = ths.class
-                           and td.subclass = ths.subclass)),
-                           
+                                    from tran_data td
+                                   where tran_code in(30,--Transferencias entrantes
+                                                      32,--Transferencias salientes
+                                                      20,--Compras
+                                                      1, 2, 3)-- Ventas  
+                                     and td.location = thti.location
+                                     and td.dept = thti.dept
+                                     and td.class = thti.class
+                                     and td.subclass = thti.subclass
+                                     and td.item = thti.item)),
+
+               exc_ord_tdh_td_tsf as
+               (select ts.*
+                  from exc_ord_tdh_td ts
+                 where not exists (select 1
+                                     from tsfhead th, tsfdetail td
+                                    where th.tsf_no = td.tsf_no
+                                      and th.to_loc = ts.location
+                                      and td.item   = ts.item
+                                      and th.status IN ('B', 'S', 'A')
+                                      and th.create_date > ts.vdate - ts.no_movement_period)),
               --------------------------------------------        
-              on_order AS (
-                  select /*+ PARALLEL(6) */ ol.item, ol.location,
-                         sum(ol.qty_ordered - nvl(ol.qty_received,0)) on_order
-                        ,0 pack_comp_on_order
-                    from ordhead oh
-                        ,ordloc ol
-                        ,td_sales ts
-                   where oh.order_no = ol.order_no
-                     and oh.status in('S','A')
-                     and ol.qty_ordered > nvl(ol.qty_received,0)
-                     and ol.location = ts.location
-                     and ol.item     = ts.item
-                     and oh.written_date <= ts.vdate - ts.no_movement_period
-                   group by ol.item, ol.location
-                  union all
-                  select /*+ PARALLEL(6) */ol.item, ol.location,
-                         0 on_order
-                        ,sum((ol.qty_ordered - nvl(ol.qty_received,0)) * pq.qty) pack_comp_on_order
-                    from ordhead oh
-                        ,ordloc ol
-                        ,v_packsku_qty pq
-                        ,td_sales ts
-                   where oh.order_no = ol.order_no
-                     and ol.item     = pq.pack_no
-                     and oh.status in('S','A')
-                     and ol.qty_ordered > nvl(ol.qty_received,0)
-                     and ol.location = ts.location
-                     and ol.item     = ts.item
-                     and oh.written_date <= ts.vdate - ts.no_movement_period
-                   group by ol.item, ol.location
-               ),
+               eligible_items_loc as
+               (select *
+                 from exc_ord_tdh_td_tsf),                                        
+                                    
+              --------------------------------------------        
+              on_order as
+              (select /*+ PARALLEL(6) */ ol.item, ol.location,
+                     sum(ol.qty_ordered - nvl(ol.qty_received,0)) on_order
+                    ,0 pack_comp_on_order
+                from ordhead oh
+                    ,ordloc ol
+                    ,eligible_items_loc ts
+               where oh.order_no = ol.order_no
+                 and oh.status in('S','A')
+                 and ol.qty_ordered > nvl(ol.qty_received,0)
+                 and ol.location = ts.location
+                 and ol.item     = ts.item
+               group by ol.item, ol.location
+              union all
+              select /*+ PARALLEL(6) */ol.item, ol.location,
+                     0 on_order
+                    ,sum((ol.qty_ordered - nvl(ol.qty_received,0)) * pq.qty) pack_comp_on_order
+                from ordhead oh
+                    ,ordloc ol
+                    ,v_packsku_qty pq
+                    ,eligible_items_loc ts
+               where oh.order_no = ol.order_no
+                 and ol.item     = pq.pack_no
+                 and oh.status in('S','A')
+                 and ol.qty_ordered > nvl(ol.qty_received,0)
+                 and ol.location = ts.location
+                 and ol.item     = ts.item
+               group by ol.item, ol.location ),
                
-             in_transit AS (
-                  select /*+ PARALLEL(6) */ td.item, th.to_loc loc
-                         ,sum(td.tsf_qty - nvl(td.received_qty,0)) in_transit 
-                    from tsfhead th
-                        ,tsfdetail td
-                        ,td_sales ts 
-                   where th.tsf_no = td.tsf_no
-                     and th.status in('B','S','A')
-                     and tsf_qty > nvl(received_qty,0)
-                     and th.to_loc = ts.location
-                     and td.item   = ts.item
-                     and th.approval_date <= ts.vdate - ts.no_movement_period
-                     group by td.item, th.to_loc
-                   )             
-              ---------------------------------------------------                        
-              SELECT /*+ PARALLEL(6) */ 
-                     ts.item ,
-                     ts.location, 
-                     ts.criteria,
-                     ts.incr_pct,
-                     ts.activate_date,
-                     ts.deactivate_date,
-                     ts.min_stock,
-                     ts.max_stock,
-                     ts.stock_cat,
-                     ts.stock_on_hand,
-                     ts.status,
-                     (select (nvl(on_order.on_order,0) + nvl(on_order.pack_comp_on_order,0)) 
-                        from on_order 
-                       where ts.location  = on_order.location
-                         and ts.item = on_order.item) on_order,
-                     (select in_transit
-                        from in_transit 
-                       where ts.location  = in_transit.loc
-                         and ts.item = in_transit.item) in_transit
-                FROM td_sales ts
-               where not exists (select 1
-                                   from tsfhead th, tsfdetail td
-                                  where th.tsf_no = td.tsf_no
-                                    and td.item   = ts.item
-                                    and th.to_loc = ts.location
-                                    and th.status IN ('B', 'S', 'A')
-                                    and th.create_date > ts.vdate - ts.no_movement_period)
-              ;            
-                      /*
-         select \*+ PARALLEL(6) *\ 
-                items_loc.item ,
-                items_loc.loc, 
-                items_loc.criteria,
-                items_loc.incr_pct,
-                items_loc.activate_date,
-                items_loc.deactivate_date,
-                items_loc.min_stock,
-                items_loc.max_stock,
-                items_loc.stock_cat,
-                items_loc.stock_on_hand,
-                items_loc.status,
+              in_transit as 
+              (select /*+ PARALLEL(6) */ td.item, th.to_loc loc
+                     ,sum(td.tsf_qty - nvl(td.received_qty,0)) in_transit 
+                from tsfhead th
+                    ,tsfdetail td
+                    ,eligible_items_loc ts 
+               where th.tsf_no = td.tsf_no
+                 and th.status in('B','S','A')
+                 and tsf_qty > nvl(received_qty,0)
+                 and th.to_loc = ts.location
+                 and td.item   = ts.item
+                 group by td.item, th.to_loc )
+              
+/*              --Regla 5 - 
+              --No considera el articulo/ubicación cuando:
+              --Es pack y tiene componente activo en item_loc y el componente no será descontinuado o
+              --Es componente y tiene pack activo en item_loc y el pack no será descontinuado.
+              pack as
+              (select * 
+                 from tsf 
+               where not exists (SELECT 1
+                                   FROM packitem pi
+                                  WHERE pi.pack_no = tsf.item
+                                    and not exists (select 1
+                                                      from tsf tsff
+                                                     where tsff.item = pi.item
+                                                       and tsff.location = tsf.location)
+                                    and exists (select 1
+                                                  from item_loc il1
+                                                 where il1.item = pi.item
+                                                   and il1.loc = tsf.location
+                                                   and il1.status = 'A')
+                                 union all                   
+                                 select 1
+                                    from packitem pi
+                                   where pi.item = tsf.item
+                                     and not exists (select 1
+                                                       from tsf tsff
+                                                      where tsff.item = pi.pack_no
+                                                        and tsff.location = tsf.location)
+                                      and exists (select 1
+                                                    from item_loc il1
+                                                   where il1.item = pi.pack_no
+                                                     and il1.loc = tsf.location
+                                                     and il1.status = 'A')))*/
+                                    
+         select /*+ PARALLEL(6) */
+                eil.item,
+                eil.location, 
+                eil.criteria,
+                eil.incr_pct,
+                eil.activate_date,
+                eil.deactivate_date,
+                eil.repl_method,
+                eil.min_stock,
+                eil.max_stock,
+                eil.stock_cat,
+                eil.stock_on_hand,
+                eil.status,
                 (select (nvl(on_order.on_order,0) + nvl(on_order.pack_comp_on_order,0)) 
                    from on_order 
-                  where items_loc.loc  = on_order.location
-                    and items_loc.item = on_order.item) on_order,
+                  where eil.location = on_order.location
+                    and eil.item = on_order.item) on_order,
                 (select in_transit
                    from in_transit 
-                  where items_loc.loc  = in_transit.loc
-                    and items_loc.item = in_transit.item) in_transit
-           from items_loc;*/
-            
+                  where eil.location  = in_transit.loc
+                    and eil.item = in_transit.item) in_transit
+           from eligible_items_loc eil;
     -- 005 END
 
     TYPE t_item_loc_tbl IS TABLE OF c_get_item_loc%ROWTYPE;
@@ -636,7 +610,18 @@ and im.dept IN (255,
     ELSE
        CLOSE c_parameters;
     END IF;
-    
+    -- 005 - BEGIN
+    --- PURGE_DATA
+    OPEN c_parameters('PURGE_DATA');
+    FETCH c_parameters INTO L_value_1, L_value_2;
+    IF c_parameters%NOTFOUND THEN
+       O_error_message := 'NOT FOUND FAH_parameter PURGE_DATA';
+       CLOSE c_parameters;
+       RETURN FALSE;
+    ELSE
+       CLOSE c_parameters;
+    END IF;
+    -- 005 - END
 
     --Begin 003
     OPEN c_get_commit_max_ctr;
@@ -705,6 +690,7 @@ and im.dept IN (255,
                   activate_date_new,
                   deactivate_date_old,
                   deactivate_date_new,
+                  repl_method,
                   min_stock,
                   max_stock,
                   stock_cat,
@@ -724,6 +710,7 @@ and im.dept IN (255,
                   L_activate_date_new,
                   L_item_loc_tbl(i).deactivate_date,
                   L_deactivate_date_new,
+                  L_item_loc_tbl(i).repl_method,
                   L_item_loc_tbl(i).min_stock,
                   L_item_loc_tbl(i).max_stock,
                   L_item_loc_tbl(i).stock_cat,

@@ -24,8 +24,9 @@ incr_pct_new              NUMBER(12,4),
 activate_date_old         DATE,          
 activate_date_new         DATE,          
 deactivate_date_old       DATE,          
-deactivate_date_new       DATE,          
-min_stock                  NUMBER(12,4),  
+deactivate_date_new       DATE,        
+repl_method               VARCHAR2(6),  
+min_stock                 NUMBER(12,4),  
 max_stock                 NUMBER(12,4),  
 stock_on_hand             NUMBER(12,4),  
 stock_in_transit          NUMBER(12,4),  
@@ -51,6 +52,7 @@ comment on column FAH_RIL_DISCONTIN_ITENS_HIST.ACTIVATE_DATE_OLD   is 'Old activ
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.ACTIVATE_DATE_NEW   is 'New activate_date from repl_item_loc';
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.DEACTIVATE_DATE_OLD is 'Old deactivate_date from repl_item_loc';
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.DEACTIVATE_DATE_NEW is 'New deactivate_date from repl_item_loc';
+comment on column FAH_RIL_DISCONTIN_ITENS_HIST.REPL_METHOD         is 'Repl. method from repl_item_loc';
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.MIN_STOCK           is 'Min_stock from repl_item_loc';
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.MAX_STOCK           is 'Max_stock from repl_item_loc';
 comment on column FAH_RIL_DISCONTIN_ITENS_HIST.STOCK_ON_HAND       is 'Stock_on_hand from item_loc_soh';
