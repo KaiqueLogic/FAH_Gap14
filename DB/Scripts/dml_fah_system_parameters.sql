@@ -10,7 +10,7 @@ delete from fah_system_parameters
    and parameter in('PURGE_DATA');
 --
 insert into fah_system_parameters (func_area, parameter, description, value_1, value_2, last_update_id, last_update_date)
-values ('DISCONTINUED_ITEMS', 'PURGE_DATA', 'Days for fah_ril_discontin_itens_hist purge', 90, null, 'FAH', sysdate);  
+values ('DISCONTINUED_ITEMS', 'PURGE_DATA', 'Days for fah_ril_discontin_items_hist purge', 90, null, 'FAH', sysdate);  
 --
 commit;
 
