@@ -1,61 +1,4 @@
-CREATE OR REPLACE PACKAGE FAH.lgc_fah_discontinued_items_sql/*fah_discontinued_items_sql*/ AUTHID CURRENT_USER AS --005
-   /***************************************************************************************/
-   /* CREATE DATE - 30-JAN-2020                                                           */
-   /* CREATE USER - V.Slusarenko                                                          */
-   /* PROJECT     - GAP.RMS.14 Farmacias del Ahorro                                       */
-   /* DESCRIPTION - The process discontinued item in a Pharmacy when an item does not sell*/
-   /*               in a configurable period of time, in a store                          */
-   /***************************************************************************************/
-   /***************************************************************************************/
-   /* CREATE DATE - 03-JUN-2020                                                           */
-   /* CREATE USER - Carlos Costa                                                          */
-   /* CHANGE      - 001                                                                   */
-   /* DESCRIPTION - Agregacion de index a pedido de FAH CORREO:                           */
-   /*                          "Proceso nb.discontinued_items.ksh UAT"                    */
-   /***************************************************************************************/
-   /***************************************************************************************/
-   /* CREATE DATE - 16-JUN-2021                                                           */
-   /* CREATE USER - Ruslan Zakusilov                                                      */
-   /* CHANGE      - 002                                                                   */
-   /* DESCRIPTION - Fix the situation when packitem meets all rules to be discontinued,   */
-   /*               but component item does not meet them. In this case both items should */
-   /*               be kept active.                                                       */
-   /***************************************************************************************/
-    /******************************************************************************************************/
-   /* CHANGE_ID   - 003                                                                                   */
-   /* CREATE DATE - 05-08-2021                                                                            */
-   /* CREATE USER - Ruslan Zakusilov                                                                      */
-   /* PROJECT     - Farmacias del Ahorro                                                                  */
-   /* DESCRIPTION - Added the multithreading processing based on information in RESTART_PROGRAM_STATUS    */
-   /*******************************************************************************************************/
-   /*******************************************************************************************************/
-   /* CHANGE_ID   - 005                                                                                   */
-   /* CREATE DATE - 27-04-2023                                                                            */
-   /* CREATE USER - Fabiane Kirsten - fabiane.kirsten@logicinfo                                           */
-   /* PROJECT     - Farmacias del Ahorro                                                                  */
-   /* DESCRIPTION - GAP 14 Business Rules changed                                                         */
-   /*******************************************************************************************************/   
-   ---------------------------------------------------------------------------------------------
-   -- Function Name : main
-   -- Purpose       : This main external function  called from batch fah_discontinued_items.ksh
-   ---------------------------------------------------------------------------------------------
-
-   --Begin 003
-     FUNCTION main(O_error_message OUT VARCHAR2,
-                   I_thread_no     IN  NUMBER,
-                   I_num_threads   IN  NUMBER,
-                   I_batch_name    IN  VARCHAR2,
-                   I_recovery      IN  NUMBER DEFAULT 0) RETURN BOOLEAN;
-     --FUNCTION main(O_error_message OUT VARCHAR2) RETURN BOOLEAN;
-   --End 003
-
-   -- 005 - Begin
-   FUNCTION purge_data(O_error_message IN OUT VARCHAR2) RETURN BOOLEAN;
-   -- 005 - End 
-   
-END lgc_fah_discontinued_items_sql/*fah_discontinued_items_sql*/;--005
-/
-CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontinued_items_sql*/ IS --005
+CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
   /******************************************************************************************************/
   /* CHANGE_ID   - 003                                                                                   */
   /* CREATE DATE - 05-08-2021                                                                            */
@@ -97,13 +40,13 @@ CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontin
     L_value_1           fah_system_parameters.value_1%TYPE;
     L_value_2           fah_system_parameters.value_1%TYPE;
     --LP_vdate            period.vdate%TYPE := get_vdate;
-    G_user_id           VARCHAR2(50) := fah_coresvc_utils.get_user_id();
     C_disc_reason       constant code_detail.code%TYPE := 'NMOS';
     -- 005 - Begin
+    --G_user_id           VARCHAR2(50) := fah_coresvc_utils.get_user_id();
+    G_user_id             VARCHAR2(50) := 'DISCONTINUED_ITEMS';
     L_incr_pct_new        fah_ril_discontin_items_hist.incr_pct_old%type := 0;
     L_activate_date_new   fah_ril_discontin_items_hist.activate_date_old%type := get_vdate;
     L_deactivate_date_new fah_ril_discontin_items_hist.deactivate_date_old%type := NULL;
-    V_AUX NUMBER;
     -- 005 - End      
     
     --Begin 003
@@ -165,7 +108,10 @@ CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontin
                                         WHERE rol.loc_type = 'W'
                                           AND rol.system = 'ORACLE'
                                           AND rol.loc = st.default_wh))
-       SELECT /*+ PARALLEL(6) */ il.item, il.loc
+       SELECT /*+ PARALLEL(6) */ 
+               il.item, 
+               il.loc,
+               cfg.no_movement_period--005
          FROM item_loc il,
               item_loc_soh ils,
               store_d,
@@ -284,7 +230,7 @@ CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontin
        L_method_w_farma    := to_number(L_value_1);
        L_method_w_no_farma := to_number(L_value_2);
     END IF;
-    -- 005 - BEGIN
+    -- 005 - Begin
     --- PURGE_DATA
     OPEN c_parameters('PURGE_DATA');
     FETCH c_parameters INTO L_value_1, L_value_2;
@@ -295,7 +241,7 @@ CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontin
     ELSE
        CLOSE c_parameters;
     END IF;
-    -- 005 - END
+    -- 005 - End
         
     --Begin 003
     OPEN c_get_commit_max_ctr;
@@ -346,15 +292,16 @@ CREATE OR REPLACE PACKAGE BODY FAH.lgc_fah_discontinued_items_sql/*fah_discontin
           
          FORALL i IN 1 .. L_item_loc_tbl.COUNT
             INSERT INTO FAH_DISCONTINUED_ITEMS_GTT
-               (ITEM, LOC)
+               (ITEM, 
+                LOC, 
+                NO_MOVEMENT_PERIOD)--005
             VALUES
-               (L_item_loc_tbl(i).item, L_item_loc_tbl(i).loc);
+               (L_item_loc_tbl(i).item, 
+                L_item_loc_tbl(i).loc,
+                L_item_loc_tbl(i).no_movement_period);--005
       END LOOP;
       CLOSE c_get_item_loc;
       -- 004 - CMS - End
-
-SELECT COUNT(*) INTO V_AUX FROM FAH_DISCONTINUED_ITEMS_GTT;
-DBMS_OUTPUT.PUT_LINE ('TOTAL GTT: '||V_AUX);
 
       /*PAL begin*/
       /*Check packs*/
@@ -434,55 +381,49 @@ DBMS_OUTPUT.PUT_LINE ('TOTAL GTT: '||V_AUX);
        --End 003
 
       --005 - Begin
-      --Regla 11 - No haya movimientos de stock (órdenes de compra abiertas,transferencias en tránsito) superior al número de ‘Días sin movimiento’
-      delete from fah_discontinued_items_gtt
-       where item IN(select distinct ol.item
-                          from ordhead oh, ordloc ol, period p
-                         where oh.order_no = ol.order_no
-                           and oh.status in ('S', 'A')
-                           and oh.written_date > p.vdate - 120)--Fijo, no hay ubicacion para buscar el no_movement_period
-          and item IN (select item
-                         from item_master
-                        where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
+      delete from fah_discontinued_items_gtt gtt
+       where gtt.item IN(select distinct ol.item
+                           from ordhead oh, ordloc ol, period p
+                          where oh.order_no = ol.order_no
+                            and oh.status in ('S', 'A')
+                            and oh.written_date > p.vdate - 120)--Fijo, no hay ubicacion para buscar el no_movement_period
+          and gtt.item IN (select item
+                             from item_master
+                            where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
       --                                                 
-      delete from fah_discontinued_items_gtt
-       where (item, loc) IN (select tdh.item, tdh.location
-                               from tran_data_history tdh, period p
-                              where tran_code in (30,--Transferencias entrantes
-                                                  32,--Transferencias salientes
-                                                  20,--Compras
-                                                  1, 2, 3)-- Ventas  
-                                and tdh.tran_date > p.vdate - 120)--ilo.no_movement_period
-         and item IN (select item
-                        from item_master
-                       where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
+      delete from fah_discontinued_items_gtt gtt
+       where (gtt.item, gtt.loc) IN (select distinct tdh.item, tdh.location
+                                       from tran_data_history tdh, period p
+                                      where tran_code in (30,--Transferencias entrantes
+                                                          32,--Transferencias salientes
+                                                          20,--Compras
+                                                          1, 2, 3)-- Ventas  
+                                        and tdh.tran_date > p.vdate - gtt.no_movement_period)
+                                        
+         and gtt.item IN (select item
+                            from item_master
+                           where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
       --                              
-      delete from fah_discontinued_items_gtt
-       where (item, loc) IN (select td.item, td.location
-                               from tran_data td
-                              where tran_code in(30,--Transferencias entrantes
-                                                 32,--Transferencias salientes
-                                                 20,--Compras
-                                                 1, 2, 3))-- Ventas  
-         and item IN (select item
-                        from item_master
-                       where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
+      delete from fah_discontinued_items_gtt gtt
+       where (gtt.item, gtt.loc) IN (select distinct td.item, td.location
+                                       from tran_data td
+                                      where tran_code in(30,--Transferencias entrantes
+                                                         32,--Transferencias salientes
+                                                         20,--Compras
+                                                         1, 2, 3))-- Ventas  
+         and gtt.item IN (select item
+                            from item_master
+                           where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
       --                                     
-      delete from fah_discontinued_items_gtt
-       where (item, loc) IN (select td.item, th.to_loc
-                                from tsfhead th, tsfdetail td, period p
-                               where th.tsf_no = td.tsf_no
-                                 and th.status IN ('B', 'S', 'A') )
-         and item IN (select item
-                        from item_master
-                        where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
-
-
-SELECT COUNT(*) INTO V_AUX FROM FAH_DISCONTINUED_ITEMS_GTT;
-DBMS_OUTPUT.PUT_LINE ('TOTAL GTT DEPOIS DELETE : '||V_AUX);
-
-                        
-      --Regla 13 - Guardar una tabla histórica de los artículos/ubicaciones cambiadas por el GAP.RMS.14 en la tabla REPL ITEM LOC
+      delete from fah_discontinued_items_gtt gtt
+       where (gtt.item, gtt.loc) IN (select distinct td.item, th.to_loc
+                                       from tsfhead th, tsfdetail td, period p
+                                      where th.tsf_no = td.tsf_no
+                                        and th.status IN ('B', 'S', 'A') )
+         and gtt.item IN (select item
+                            from item_master
+                           where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
+      --
       insert into FAH.fah_ril_discontin_items_hist
                (execute_date,
                 item,
@@ -562,7 +503,7 @@ DBMS_OUTPUT.PUT_LINE ('TOTAL GTT DEPOIS DELETE : '||V_AUX);
                    and cfg.source_method = il.source_method) criteria,
                 --   
                 C_disc_reason,
-                'DISCONTINUED_ITEMS'
+                G_user_id
            from fah_discontinued_items_gtt gtt, 
                 repl_item_loc ril,
                 item_loc il,
@@ -580,22 +521,23 @@ DBMS_OUTPUT.PUT_LINE ('TOTAL GTT DEPOIS DELETE : '||V_AUX);
             and gtt.item IN (SELECT item
                                FROM item_master
                               WHERE dept in (SELECT VALUE(ids) FROM table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));  
-       /*UPDATE item_loc
+      /*UPDATE item_loc
         SET status = 'C',
             status_update_date = sysdate,
             last_update_datetime = sysdate,
             last_update_id = G_user_id
        WHERE (item, loc) IN (select item,loc from fah_discontinued_items_gtt)
-       */
+      */
        
-      UPDATE FAH.LGC_REPL_ITEM_LOC
+      UPDATE repl_item_loc
          SET incr_pct             = L_incr_pct_new ,
              deactivate_Date      = L_deactivate_date_new,
              activate_date        = L_activate_date_new,
              last_update_datetime = sysdate,
-             last_update_id       = 'DISCONTINUED_ITEMS'--G_user_id
+             last_update_id       = G_user_id
        WHERE (item, location) IN (select item, loc from fah_discontinued_items_gtt)                  
        --005 - End  
+       
        --Begin 003
         AND item IN (SELECT item
                        FROM item_master
@@ -657,7 +599,6 @@ DBMS_OUTPUT.PUT_LINE ('TOTAL GTT DEPOIS DELETE : '||V_AUX);
     L_program  CONSTANT VARCHAR2(100) := 'LGC_FAH_DISCONTINUED_ITEMS_SQL.PURGE_DATA';
     L_cmd_del  VARCHAR2(2000);
   BEGIN
-    --Regla 14 - Purgar la tabla histórica
     L_cmd_del:= 'delete /*+PARALLEL (hist,4)*/
                    from FAH.fah_ril_discontin_items_hist hist
                   where get_vdate-trunc(hist.execute_date) > (select value_1
@@ -678,5 +619,5 @@ DBMS_OUTPUT.PUT_LINE ('TOTAL GTT DEPOIS DELETE : '||V_AUX);
   -- 005 - End
   -----------------------------------------------------------------------------------------------------
      
-END lgc_fah_discontinued_items_sql/*fah_discontinued_items_sql*/;--005
+END fah_discontinued_items_sql;
 /
