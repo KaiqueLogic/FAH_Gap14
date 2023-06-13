@@ -382,11 +382,11 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
 
       --005 - Begin
       delete from fah_discontinued_items_gtt gtt
-       where gtt.item IN(select distinct ol.item
-                           from ordhead oh, ordloc ol, period p
-                          where oh.order_no = ol.order_no
-                            and oh.status in ('S', 'A')
-                            and oh.written_date > p.vdate - 120)--Fijo, no hay ubicacion para buscar el no_movement_period
+       where (gtt.item, gtt.loc) IN (select distinct ol.item, ol.location
+                                       from ordhead oh, ordloc ol, period p
+                                      where oh.order_no = ol.order_no
+                                        and oh.status in ('S', 'A')
+                                        and oh.written_date > p.vdate - gtt.no_movement_period)
           and gtt.item IN (select item
                              from item_master
                             where dept in (select VALUE(ids) from table(cast(l_tab_ids as OBJ_NUMERIC_ID_TABLE)) ids));
