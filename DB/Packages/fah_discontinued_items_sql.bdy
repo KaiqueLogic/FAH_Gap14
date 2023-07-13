@@ -147,6 +147,7 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
           AND il.loc       = ril.location --005
           AND il.loc_type  = ril.loc_type --005
           AND ril.incr_pct = 100          --005
+          AND (deactivate_date IS NULL OR deactivate_date > p.vdate) --005 
           AND NOT EXISTS (SELECT 1
                             FROM repl_item_loc
                            WHERE item = il.item
