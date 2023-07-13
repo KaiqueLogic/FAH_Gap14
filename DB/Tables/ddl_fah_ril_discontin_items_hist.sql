@@ -32,6 +32,7 @@ stock_on_hand             NUMBER(12,4),
 stock_in_transit          NUMBER(12,4),  
 stock_on_order            NUMBER(12,4),  
 stock_cat                 VARCHAR2(6),   
+primary_pack_no           VARCHAR2(25),
 reason_code               VARCHAR2(6),   
 criteria                  VARCHAR2(200), 
 create_id                 VARCHAR2(30) not null
@@ -59,6 +60,7 @@ comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.STOCK_ON_HAND       is 'Stock_on_
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.STOCK_IN_TRANSIT    is 'In_transit_qtd from item_loc_soh';
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.STOCK_ON_ORDER      is 'Stock on order from orders';
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.STOCK_CAT           is 'Stock_cat from repl_item_loc';
+comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.PRIMARY_PACK_NO     is 'Primary pack identifier';
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.REASON_CODE         is 'Reason code NMOS';
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.CRITERIA            is 'Criteria to Dias sin Movimiento (Origen - Mundo - Tipo de Producto - Numero de Dias)';
 comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.CREATE_ID           is 'User ID';
@@ -66,8 +68,3 @@ comment on column FAH_RIL_DISCONTIN_ITEMS_HIST.CREATE_ID           is 'User ID';
 -- Create/Recreate primary, unique and foreign key constraints 
 alter table FAH_RIL_DISCONTIN_ITEMS_HIST  add constraint FAH_RIL_DIH_PK primary key (execute_date, item, location)
 /
-
- 
-
-
-

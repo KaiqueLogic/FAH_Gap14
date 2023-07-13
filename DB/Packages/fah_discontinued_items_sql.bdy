@@ -152,7 +152,7 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
                            WHERE item = il.item
                              AND loc_type = il.loc_type
                              AND location = il.loc
-                             AND (deactivate_date IS NULL OR deactivate_date > p.vdate)
+                             --AND (deactivate_date IS NULL OR deactivate_date > p.vdate) --005 
                              AND repl_method IN ('M', 'C')
                              AND DECODE(repl_method, 'M', min_stock, 'C', max_stock) > 1)
           AND il.item = uil.item(+)
@@ -167,6 +167,7 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
           AND il.status_update_date + cfg.no_movement_period < p.vdate
           AND NVL(ils.last_sold, to_date('1900', 'YYYY')) + cfg.no_movement_period < p.vdate
           AND NVL(ship.last_receive_date, to_date('1900', 'YYYY')) + cfg.no_movement_period < p.vdate;
+
     --
     TYPE t_item_loc_tbl IS TABLE OF c_get_item_loc%ROWTYPE;
     L_item_loc_tbl  t_item_loc_tbl;
@@ -443,6 +444,7 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
                 stock_in_transit,
                 stock_on_order,
                 criteria,
+                primary_pack_no,
                 reason_code,
                 create_id)
          select sysdate,
@@ -502,6 +504,7 @@ CREATE OR REPLACE PACKAGE BODY fah_discontinued_items_sql IS
                    and uil.uda_id = 3
                    and cfg.source_method = il.source_method) criteria,
                 --   
+                ril.primary_pack_no,
                 C_disc_reason,
                 G_user_id
            from fah_discontinued_items_gtt gtt, 
